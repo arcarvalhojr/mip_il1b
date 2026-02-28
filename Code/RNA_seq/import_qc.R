@@ -74,14 +74,14 @@ dds <- DESeq2::DESeqDataSetFromMatrix(countData = seq_data,
 dds <- dds[rowSums(counts(dds)) >= 10, ]
 
 # perform a variance stabilizing transformation
-vsd <- DESeq2::vst(dds, blind = TRUE)
+vsd <- DESeq2::vst(dds, blind = T)
 
 # rlog transform
 #rld <- DESeq2::rlog(dds, blind = FALSE)
 
 
 # ------------------------------------- PCA
-# extract rlog count matrix
+# extract vsd count matrix
 vsd_mat <- assay(vsd) 
 
 # calculate variance
@@ -96,21 +96,26 @@ pca <- prcomp(t(vsd_mat[top500, ]))
 # create df with metadata
 df <- cbind(exp_design, pca$x) 
 
-# second row is stored in the object "importance"
+# before plot, lets see what variables are driven the each pc
+anova(lm(PC1 ~ gestational_day + infection, data = df))
+anova(lm(PC2 ~ gestational_day + infection, data = df))
+anova(lm(PC3 ~ gestational_day + infection, data = df))
+anova(lm(PC4 ~ gestational_day + infection, data = df))
+
+# get the "importance" of each pc, stored in the second row
 pca_var <- round(summary(pca)$importance[2,] * 100, 2) 
 
-
-ggplot(df, aes(x = PC1, y = PC2, 
+ggplot(df, aes(x = PC1, y = PC4, 
                color = gestational_day, shape = infection)) +
   geom_point(size = 3) +
-  #facet_wrap(~ gestational_day) +
+  ggrepel::geom_text_repel(aes(label = sample_id), size = 3) +
   labs(
     x = paste0("PC1: ", pca_var["PC1"], "%"),
-    y = paste0("PC2: ", pca_var["PC2"], "%")
+    y = paste0("PC4: ", pca_var["PC4"], "%")
   ) +
   theme_bw()
 
-
+# facet plot by gd to better visualize the infection
 ggplot(df, aes(x = PC1, y = PC3, color = infection)) +
   geom_point(size = 3) +
   facet_wrap(~ gestational_day) +
@@ -121,20 +126,20 @@ ggplot(df, aes(x = PC1, y = PC3, color = infection)) +
   theme_bw()
 
 
+colSums(seq_data >= 10)
+boxplot(log2(seq_data + 1), outline = FALSE)
+
+
 # ------------------------------------ distance plot
-# distância entre amostras
+# get sample dists on the transposed count matrix
 sample_dists <- dist(t(assay(vsd)))
 
+# transform into a matrix
 sample_dist_matrix <- as.matrix(sample_dists)
-
-# anotation
-annotation_col <- as.data.frame(colData(vsd)[, c("gestational_day", "infection")])
-
-rownames(annotation_col) == colnames(sample_dist_matrix)
 
 pheatmap(
   sample_dist_matrix,
-  annotation_col = annotation_col,
+  annotation_col = colData,
   color = colorRampPalette(
     rev(RColorBrewer::brewer.pal(9, "Blues"))
   )(255)
@@ -145,13 +150,8 @@ pheatmap(
 # select 40 genes
 top_var_mat <- vsd_mat[top500[1:40], ]
 
+# subtract out the means from each row, leaving the variances for each gene
 top_var_mat <- top_var_mat - rowMeans(top_var_mat)
-
-
-annotation_col <- as.data.frame(
-  colData(vsd)[, c("gestational_day", "infection")]
-)
-
 
 pheatmap(
   top_var_mat,
@@ -164,3 +164,8 @@ pheatmap(
   fontsize_col = 10,
   border_color = NA
 )
+
+
+# save data ---------------------------------------------------------------
+
+saveRDS(dds, "Data/processed/dds_filtered.rds")
