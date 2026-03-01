@@ -71,7 +71,7 @@ dds <- DESeq2::DESeqDataSetFromMatrix(countData = seq_data,
 # exploratory data analysis -----------------------------------------------
 
 # filter out low count genes
-dds <- dds[rowSums(counts(dds)) >= 10, ]
+dds <- dds[ rowSums(counts(dds)) > 20, ]
 
 # perform a variance stabilizing transformation
 vsd <- DESeq2::vst(dds, blind = T)
