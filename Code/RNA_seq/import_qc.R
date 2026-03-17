@@ -1,4 +1,7 @@
-#### Exploratory analysis (qc) for the bulk rna-seq data  ####
+# ==============================================================================
+# 
+# Import raw count data, tidy, run QC and save colData and filtered dds object
+# ==============================================================================
 
 
 # import libraries --------------------------------------------------------
@@ -12,14 +15,15 @@
 
 # require libs
 library(tidyverse)
-library(DESeq2)
 library(readxl)
+library(janitor)
+library(DESeq2)
 library(pheatmap)
 
 # import data -------------------------------------------------------------
-seq_data <- read_tsv("Data/raw/rna_seq/counts_hisat_RefSeq.tsv")
+seq_data <- readr::read_tsv("Data/raw/rna_seq/counts_hisat_RefSeq.tsv")
 
-exp_design <- read_xlsx("Data/raw/rna_seq/exp_design.xlsx")
+exp_design <- readxl::read_xlsx("Data/raw/rna_seq/exp_design.xlsx")
 
 
 # data tyding -------------------------------------------------------------
@@ -27,8 +31,7 @@ exp_design <- read_xlsx("Data/raw/rna_seq/exp_design.xlsx")
 # transform the seq data into matrix with genes as row names
 seq_data <- seq_data %>%
   dplyr::select(-width) %>% 
-  dplyr::rename(gene_symbol = ...1) %>%
-  tibble::column_to_rownames("gene_symbol") %>% 
+  tibble::column_to_rownames("...1") %>% 
   as.matrix()
 
 colnames(seq_data) <- sub(".*_", "", colnames(seq_data))
@@ -50,7 +53,8 @@ colSums(seq_data)
 
 # create the colData for
 colData <- exp_design %>%
-  dplyr::select(sample_id, gestational_day, infection) %>% 
+  dplyr::mutate(group = paste0(gestational_day, "_", infection)) %>% 
+  dplyr::select(sample_id, gestational_day, infection, group) %>% 
   tibble::column_to_rownames("sample_id")
 
 # check if sample names match in both files
@@ -71,51 +75,50 @@ dds <- DESeq2::DESeqDataSetFromMatrix(countData = seq_data,
 # exploratory data analysis -----------------------------------------------
 
 # filter out low count genes
-dds <- dds[ rowSums(counts(dds)) > 20, ]
+keep <- rowSums(counts(dds) > 20) >= 4
+dds <- dds[keep, ]
 
-# perform a variance stabilizing transformation
-vsd <- DESeq2::vst(dds, blind = T)
+# rlog transformation
+rld <- DESeq2::rlog(dds, blind = TRUE)
 
-# rlog transform
-#rld <- DESeq2::rlog(dds, blind = FALSE)
-
-
-# ------------------------------------- PCA
 # extract vsd count matrix
-vsd_mat <- assay(vsd) 
+rld_mat <- assay(rld) 
 
 # calculate variance
-rv <- rowVars(vsd_mat)
+rv <- rowVars(rld_mat)
 
 # select the top500 variable genes
 top500 <- order(rv, decreasing = TRUE)[1:500]
 
+
+# ------------------------------------- PCA
 # perform PCA on the transposed matrix of data
-pca <- prcomp(t(vsd_mat[top500, ]))  
+pca <- prcomp(t(rld_mat[top500, ]))  
+
+# get the "importance" of each pc, stored in the second row
+pca_var <- round(summary(pca)$importance[2,] * 100, 2) 
 
 # create df with metadata
 df <- cbind(exp_design, pca$x) 
 
-# before plot, lets see what variables are driven the each pc
+# before plot, lets see which variables drive each pc
 anova(lm(PC1 ~ gestational_day + infection, data = df))
 anova(lm(PC2 ~ gestational_day + infection, data = df))
 anova(lm(PC3 ~ gestational_day + infection, data = df))
 anova(lm(PC4 ~ gestational_day + infection, data = df))
 
-# get the "importance" of each pc, stored in the second row
-pca_var <- round(summary(pca)$importance[2,] * 100, 2) 
-
-ggplot(df, aes(x = PC1, y = PC4, 
+# pc1 vs pc4 for gd effect
+ggplot(df, aes(x = PC1, y = PC2, 
                color = gestational_day, shape = infection)) +
   geom_point(size = 3) +
   ggrepel::geom_text_repel(aes(label = sample_id), size = 3) +
   labs(
     x = paste0("PC1: ", pca_var["PC1"], "%"),
-    y = paste0("PC4: ", pca_var["PC4"], "%")
+    y = paste0("PC2: ", pca_var["PC2"], "%")
   ) +
   theme_bw()
 
-# facet plot by gd to better visualize the infection
+# pc1 vs pc3 faceted plot to better visualize the effect of infection
 ggplot(df, aes(x = PC1, y = PC3, color = infection)) +
   geom_point(size = 3) +
   facet_wrap(~ gestational_day) +
@@ -126,46 +129,24 @@ ggplot(df, aes(x = PC1, y = PC3, color = infection)) +
   theme_bw()
 
 
-colSums(seq_data >= 10)
-boxplot(log2(seq_data + 1), outline = FALSE)
-
-
 # ------------------------------------ distance plot
 # get sample dists on the transposed count matrix
-sample_dists <- dist(t(assay(vsd)))
+sample_dists <- dist(t(rld_mat[top500, ]))
 
 # transform into a matrix
 sample_dist_matrix <- as.matrix(sample_dists)
 
 pheatmap(
   sample_dist_matrix,
-  annotation_col = colData,
+  annotation_col = colData %>% dplyr::select(-group),
   color = colorRampPalette(
     rev(RColorBrewer::brewer.pal(9, "Blues"))
   )(255)
 )
 
 
-# ---------------------------------- distance plot (genes)
-# select 40 genes
-top_var_mat <- vsd_mat[top500[1:40], ]
-
-# subtract out the means from each row, leaving the variances for each gene
-top_var_mat <- top_var_mat - rowMeans(top_var_mat)
-
-pheatmap(
-  top_var_mat,
-  annotation_col = colData,
-  color = colorRampPalette(
-    rev(RColorBrewer::brewer.pal(11, "RdBu"))
-  )(255),
-  scale = "none",
-  fontsize_row = 8,
-  fontsize_col = 10,
-  border_color = NA
-)
-
-
 # save data ---------------------------------------------------------------
 
 saveRDS(dds, "Data/processed/dds_filtered.rds")
+saveRDS(colData, "Data/processed/colData.rds")
+
