@@ -16,7 +16,6 @@ library(writexl)
 
 # import data -------------------------------------------------------------
 dds <- readRDS("Data/processed/dds_filtered.rds")
-colData <- readRDS("Data/processed/colData.rds")
 
 
 # DE analysis -------------------------------------------------------------
@@ -27,69 +26,51 @@ dds <- DESeq2::DESeq(dds)
 # plot dispersion estimates
 DESeq2::plotDispEsts(dds)
 
-# get comparisons name
-DESeq2::resultsNames(dds)
-
 
 # extract results of the model
 # results for the effect of pregnacy for gds vs gd16.5
 res_gd17_vs_gd16_ctrl <- DESeq2::results(
-  dds, name = "gestational_day_Gd17.5_vs_Gd16.5",
+  dds, 
+  contrast = c("group", "Gd17.5_no", "Gd16.5_no"),
   alpha    = 0.05
 )
 
 res_gd18_vs_gd16_ctrl <- DESeq2::results(
   dds,
-  name = "gestational_day_Gd18.5_vs_Gd16.5",
+  contrast = c("group", "Gd18.5_no", "Gd16.5_no"),
   alpha    = 0.05
 )
 
 # results for the effect of infection in each gd vs its control
 res_gd16_inf <- DESeq2::results(
   dds,
-  name = "infection_yes_vs_no",
+  contrast = c("group", "Gd16.5_yes", "Gd16.5_no"),
   alpha    = 0.05
 )
 
 res_gd17_inf <- DESeq2::results(
   dds,
-  contrast = list(c("infection_yes_vs_no",
-                    "gestational_dayGd17.5.infectionyes")),
+  contrast = c("group", "Gd17.5_yes", "Gd17.5_no"),
   alpha    = 0.05
 )
 
 res_gd18_inf <- DESeq2::results(
   dds,
-  contrast = list(c("infection_yes_vs_no",
-                    "gestational_dayGd18.5.infectionyes")),
+  contrast = c("group", "Gd18.5_yes", "Gd18.5_no"),
   alpha    = 0.05
 )
 
-# results for the interaction
-res_gd17_vs_gd16_int <- DESeq2::results(
-  dds,
-  name = "gestational_dayGd17.5.infectionyes",
-  alpha = 0.05
-)
-
-res_gd18_vs_gd16_int <- DESeq2::results(
-  dds,
-  name = "gestational_dayGd18.5.infectionyes",
-  alpha = 0.05
-)
 
 # results list
 results_list <- list(
   gd16_inf = res_gd16_inf,
   gd17_inf = res_gd17_inf,
   gd18_inf = res_gd18_inf,
-  gd17_vs_gd16_int = res_gd17_vs_gd16_int,
-  gd18_vs_gd16_int = res_gd18_vs_gd16_int,
   gd17_vs_gd16_ctrl = res_gd17_vs_gd16_ctrl,
   gd18_vs_gd16_ctrl = res_gd18_vs_gd16_ctrl
 )
 
-# results dummary
+# results summary
 purrr::walk2(results_list, names(results_list), ~ {
   cat("\n══", .y, "══\n")
   print(DESeq2::summary(.x))
@@ -109,32 +90,39 @@ shrink_result <- function(contrast, res) {
   )
 }
 
-res_gd16_inf_shr <- shrink_result(c("infection_yes_vs_no"), res_gd16_inf)
+res_gd16_inf_shr <- shrink_result(
+  c("group", "Gd16.5_yes", "Gd16.5_no"),
+  res_gd16_inf
+)
+
+res_gd17_inf_shr <- shrink_result(   
+  c("group", "Gd17.5_yes", "Gd17.5_no"),
+  res_gd17_inf
+)
 
 res_gd18_inf_shr <- shrink_result(
-  c("infection_yes_vs_no", "gestational_dayGd17.5.infectionyes"),
+  c("group", "Gd18.5_yes", "Gd18.5_no"),
   res_gd18_inf
 )
 
 res_gd17_ctrl_shr <- shrink_result(
-  c("gestational_day_Gd17.5_vs_Gd16.5"), res_gd17_vs_gd16_ctrl
+  c("group", "Gd17.5_no", "Gd16.5_no"),
+  res_gd17_vs_gd16_ctrl
 )
 
 res_gd18_ctrl_shr <- shrink_result(
-  c("gestational_day_Gd18.5_vs_Gd16.5"), res_gd18_vs_gd16_ctrl
+  c("group", "Gd18.5_no", "Gd16.5_no"),
+  res_gd18_vs_gd16_ctrl
 )
 
-res_gd18_int_shr <- shrink_result(
-  c("gestational_dayGd18.5.infectionyes"), res_gd18_vs_gd16_int
-)
 
 # shrank results list
 results_shr <- list(
   gd16_inf = res_gd16_inf_shr,
-  gd18_inf = res_gd18_int_shr,
-  gd18_vs_gd16_int = res_gd18_int_shr,
-  gd18_vs_gd16_ctrl = res_gd18_ctrl_shr,
-  gd17_vs_gd16_ctrl = res_gd17_ctrl_shr
+  gd17_inf = res_gd17_inf_shr,
+  gd18_inf = res_gd18_inf_shr,
+  gd17_vs_gd16_ctrl = res_gd17_ctrl_shr,
+  gd18_vs_gd16_ctrl = res_gd18_ctrl_shr
 )
 
 saveRDS(results_shr, "Data/processed/deseq2_results_shrunk.rds")

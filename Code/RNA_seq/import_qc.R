@@ -1,6 +1,7 @@
 # ==============================================================================
 # 
 # Import raw count data, tidy, run QC and save colData and filtered dds object
+#
 # ==============================================================================
 
 
@@ -61,6 +62,11 @@ colData <- exp_design %>%
 all(rownames(colData) == colnames(seq_data))
 
 # define the reference conditions for each factor
+colData$group <- factor(colData$group,
+                        levels = c("Gd16.5_no", "Gd16.5_yes",
+                                   "Gd17.5_no", "Gd17.5_yes",
+                                   "Gd18.5_no", "Gd18.5_yes"))
+
 colData$gestational_day <- factor(colData$gestational_day,
                                      levels = c("Gd16.5", "Gd17.5", "Gd18.5"))
 
@@ -69,7 +75,7 @@ colData$infection <- factor(colData$infection, levels = c("no", "yes"))
 # dds object
 dds <- DESeq2::DESeqDataSetFromMatrix(countData = seq_data,
                                       colData = colData,
-                                      design = ~ gestational_day+infection+gestational_day:infection)
+                                      design = ~ group)
 
 
 # exploratory data analysis -----------------------------------------------
@@ -136,7 +142,7 @@ sample_dists <- dist(t(rld_mat[top500, ]))
 # transform into a matrix
 sample_dist_matrix <- as.matrix(sample_dists)
 
-pheatmap(
+pheatmap::pheatmap(
   sample_dist_matrix,
   annotation_col = colData %>% dplyr::select(-group),
   color = colorRampPalette(
